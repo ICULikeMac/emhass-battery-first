@@ -377,12 +377,15 @@ class Optimization:
                     # Build the objective with conditional penalties
                     objective_terms = []
                     for i in set_I:
-                        # For positive prices: use huge penalty to force battery use
-                        # For negative prices: use small negative penalty to encourage grid use
-                        if unit_load_cost[i] > 0:
-                            grid_cost = 1e9 * unit_load_cost[i] * P_grid_pos[i]  # Huge penalty when price positive
+                        # For NON-negative prices (>= 0): use huge penalty to force battery use
+                        # For negative prices (< 0): use standard penalty to allow grid import when being paid
+                        if unit_load_cost[i] < 0:
+                            # Negative price: being paid to import, use standard penalty
+                            grid_cost = 1e3 * unit_load_cost[i] * P_grid_pos[i]
                         else:
-                            grid_cost = 1e3 * unit_load_cost[i] * P_grid_pos[i]  # Small penalty when price negative
+                            # Zero or positive price: use huge penalty to force battery use
+                            # Add a large constant penalty to prevent grid import even when price is 0
+                            grid_cost = (1e9 + 1e6) * P_grid_pos[i] + 1e9 * unit_load_cost[i] * P_grid_pos[i]
 
                         objective_terms.append(
                             -0.001 * self.timeStep * (grid_cost + unit_prod_price[i] * P_grid_neg[i])
