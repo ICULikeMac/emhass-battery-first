@@ -372,22 +372,33 @@ class Optimization:
             if type_self_conso == "bigm":
                 # Use much larger penalty for battery-first mode
                 if self.optim_conf.get("set_battery_first", False) and self.optim_conf["set_use_battery"]:
-                    bigm = 1e9  # 1 billion - extreme penalty for grid import
-                    self.logger.info("Battery-first mode enabled: Using penalty factor 1e9 for grid import")
+                    self.logger.info("Battery-first mode enabled: Applying strong grid import penalty")
+                    # For battery-first mode, we need to handle positive and negative prices separately
+                    # Build the objective with conditional penalties
+                    objective_terms = []
+                    for i in set_I:
+                        # For positive prices: use huge penalty to force battery use
+                        # For negative prices: use small negative penalty to encourage grid use
+                        if unit_load_cost[i] > 0:
+                            grid_cost = 1e9 * unit_load_cost[i] * P_grid_pos[i]  # Huge penalty when price positive
+                        else:
+                            grid_cost = 1e3 * unit_load_cost[i] * P_grid_pos[i]  # Small penalty when price negative
+
+                        objective_terms.append(
+                            -0.001 * self.timeStep * (grid_cost + unit_prod_price[i] * P_grid_neg[i])
+                        )
+                    objective = plp.lpSum(objective_terms)
                 else:
                     bigm = 1e3  # Standard penalty
-
-                # Apply penalty to grid import when price is positive
-                # When price is negative, penalty becomes negative (encourages grid use)
-                objective = plp.lpSum(
-                    -0.001
-                    * self.timeStep
-                    * (
-                        bigm * max(0, unit_load_cost[i]) * P_grid_pos[i]  # Only penalize positive prices
-                        + unit_prod_price[i] * P_grid_neg[i]
+                    objective = plp.lpSum(
+                        -0.001
+                        * self.timeStep
+                        * (
+                            bigm * unit_load_cost[i] * P_grid_pos[i]
+                            + unit_prod_price[i] * P_grid_neg[i]
+                        )
+                        for i in set_I
                     )
-                    for i in set_I
-                )
             elif type_self_conso == "maxmin":
                 objective = plp.lpSum(
                     0.001 * self.timeStep * unit_load_cost[i] * SC[i] for i in set_I
