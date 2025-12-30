@@ -412,15 +412,30 @@ class Optimization:
             self.logger.error("The cost function specified type is not valid")
         # Add more terms to the objective function in the case of battery use
         if self.optim_conf["set_use_battery"]:
-            objective = objective + plp.lpSum(
-                -0.001
-                * self.timeStep
-                * (
-                    self.optim_conf["weight_battery_discharge"] * P_sto_pos[i]
-                    - self.optim_conf["weight_battery_charge"] * P_sto_neg[i]
+            # In battery-first mode, add incentive to charge battery to maintain reserve
+            if self.optim_conf.get("set_battery_first", False):
+                # Add strong incentive to charge battery (negative P_sto_neg means charging)
+                # This encourages battery charging even when export prices are negative
+                objective = objective + plp.lpSum(
+                    -0.001
+                    * self.timeStep
+                    * (
+                        self.optim_conf["weight_battery_discharge"] * P_sto_pos[i]
+                        - (self.optim_conf["weight_battery_charge"] + 1e3) * P_sto_neg[i]  # Large reward for charging
+                    )
+                    for i in set_I
                 )
-                for i in set_I
-            )
+                self.logger.info("Battery-first mode: Added charging incentive (1e3) to maintain battery reserve")
+            else:
+                objective = objective + plp.lpSum(
+                    -0.001
+                    * self.timeStep
+                    * (
+                        self.optim_conf["weight_battery_discharge"] * P_sto_pos[i]
+                        - self.optim_conf["weight_battery_charge"] * P_sto_neg[i]
+                    )
+                    for i in set_I
+                )
 
         # Add term penalizing each startup where configured
         if (
