@@ -474,6 +474,12 @@
       "input": "boolean",
       "default_value": true
     },
+    "set_battery_first": {
+      "friendly_name": "Enable battery-first mode",
+      "Description": "When enabled, battery will always discharge to meet load before importing from grid (unless grid price is negative). Final SOC constraint is relaxed to allow maximum battery usage. Must be used with costfun='self-consumption'.",
+      "input": "boolean",
+      "default_value": false
+    },
     "set_battery_dynamic": {
       "friendly_name": "Set Battery dynamic (dis)charge power limiting",
       "Description": "Set a power dynamic limiting condition to the battery power. This is an additional constraint on the battery dynamic in power per unit of time (timestep), which allows you to set a percentage of the battery’s nominal full power as the maximum power allowed for (dis)charge.",

@@ -370,12 +370,20 @@ class Optimization:
                 )
         elif self.costfun == "self-consumption":
             if type_self_conso == "bigm":
-                bigm = 1e3
+                # Use much larger penalty for battery-first mode
+                if self.optim_conf.get("set_battery_first", False) and self.optim_conf["set_use_battery"]:
+                    bigm = 1e9  # 1 billion - extreme penalty for grid import
+                    self.logger.info("Battery-first mode enabled: Using penalty factor 1e9 for grid import")
+                else:
+                    bigm = 1e3  # Standard penalty
+
+                # Apply penalty to grid import when price is positive
+                # When price is negative, penalty becomes negative (encourages grid use)
                 objective = plp.lpSum(
                     -0.001
                     * self.timeStep
                     * (
-                        bigm * unit_load_cost[i] * P_grid_pos[i]
+                        bigm * max(0, unit_load_cost[i]) * P_grid_pos[i]  # Only penalize positive prices
                         + unit_prod_price[i] * P_grid_neg[i]
                     )
                     for i in set_I
@@ -1234,21 +1242,45 @@ class Optimization:
                     for i in set_I
                 }
             )
-            constraints.update(
-                {
-                    f"constraint_socfinal_{0}": plp.LpConstraint(
-                        e=plp.lpSum(
-                            P_sto_pos[i] * (1 / self.plant_conf["battery_discharge_efficiency"])
-                            + self.plant_conf["battery_charge_efficiency"] * P_sto_neg[i]
-                            for i in set_I
-                        ),
-                        sense=plp.LpConstraintEQ,
-                        rhs=(soc_init - soc_final)
-                        * self.plant_conf["battery_nominal_energy_capacity"]
-                        / self.timeStep,
-                    )
-                }
-            )
+            # Final SOC constraint - modified for battery-first mode
+            if self.optim_conf.get("set_battery_first", False) and self.optim_conf["set_use_battery"]:
+                # Battery-first mode: Use inequality constraint
+                # Battery can discharge down to minimum SOC (no strict target requirement)
+                constraints.update(
+                    {
+                        f"constraint_socfinal_relaxed_{0}": plp.LpConstraint(
+                            e=plp.lpSum(
+                                P_sto_pos[i] * (1 / self.plant_conf["battery_discharge_efficiency"])
+                                + self.plant_conf["battery_charge_efficiency"] * P_sto_neg[i]
+                                for i in set_I
+                            ),
+                            sense=plp.LpConstraintLE,  # Changed from EQ to LE
+                            rhs=(soc_init - self.plant_conf["battery_minimum_state_of_charge"])
+                            * self.plant_conf["battery_nominal_energy_capacity"]
+                            / self.timeStep,
+                        )
+                    }
+                )
+                self.logger.info(
+                    f"Battery-first mode: Final SOC constraint relaxed (can discharge to {self.plant_conf['battery_minimum_state_of_charge']*100}%)"
+                )
+            else:
+                # Standard equality constraint
+                constraints.update(
+                    {
+                        f"constraint_socfinal_{0}": plp.LpConstraint(
+                            e=plp.lpSum(
+                                P_sto_pos[i] * (1 / self.plant_conf["battery_discharge_efficiency"])
+                                + self.plant_conf["battery_charge_efficiency"] * P_sto_neg[i]
+                                for i in set_I
+                            ),
+                            sense=plp.LpConstraintEQ,
+                            rhs=(soc_init - soc_final)
+                            * self.plant_conf["battery_nominal_energy_capacity"]
+                            / self.timeStep,
+                        )
+                    }
+                )
         opt_model.constraints = constraints
 
         ## Finally, we call the solver to solve our optimization model:
