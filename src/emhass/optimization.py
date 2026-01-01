@@ -414,18 +414,19 @@ class Optimization:
         if self.optim_conf["set_use_battery"]:
             # In battery-first mode, add incentive to charge battery to maintain reserve
             if self.optim_conf.get("set_battery_first", False):
-                # Add strong incentive to charge battery (negative P_sto_neg means charging)
+                # Add very strong incentive to charge battery (negative P_sto_neg means charging)
                 # This encourages battery charging even when export prices are negative
+                # Using 1e6 (1 million) to strongly encourage charging to 100%
                 objective = objective + plp.lpSum(
                     -0.001
                     * self.timeStep
                     * (
                         self.optim_conf["weight_battery_discharge"] * P_sto_pos[i]
-                        - (self.optim_conf["weight_battery_charge"] + 1e3) * P_sto_neg[i]  # Large reward for charging
+                        - (self.optim_conf["weight_battery_charge"] + 1e6) * P_sto_neg[i]  # Very large reward for charging
                     )
                     for i in set_I
                 )
-                self.logger.info("Battery-first mode: Added charging incentive (1e3) to maintain battery reserve")
+                self.logger.info("Battery-first mode: Added charging incentive (1e6) to maximize battery reserve")
             else:
                 objective = objective + plp.lpSum(
                     -0.001
